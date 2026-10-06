@@ -11,3 +11,5 @@ make
 ```bash
 cleo song.mp3
 ```
+
+Space to play/pause, arrow keys to navigate, shift arrows to skip 10 seconds.
