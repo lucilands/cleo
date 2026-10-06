@@ -1,7 +1,8 @@
 #include <ncurses.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <wchar.h>
+
+#include <id3tag.h>
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
@@ -13,7 +14,6 @@ static void handle_exit_signal(int signum) {
     g_running = 0;
 }
 
-
 typedef struct {
     ma_engine engine;
     ma_sound sound;
@@ -21,8 +21,27 @@ typedef struct {
     float progress;
     float length;
     bool playing;
+    id3_utf8_t *title;
+    id3_utf8_t *artist;
 } playback_t;
 
+
+id3_utf8_t *get_id3tag(struct id3_tag *tag, const char *frameno) {
+    struct id3_frame *frame = id3_tag_findframe(tag, frameno, 0);
+    if (!frame) return NULL;
+
+    union id3_field *field = id3_frame_field(frame, 1);
+    if (!field) return NULL;
+    unsigned int nstrings = id3_field_getnstrings(field);        
+    for (unsigned int i = 0; i < nstrings; i++) {
+        const id3_ucs4_t *ucs4_str = id3_field_getstrings(field, i);
+                
+        if (ucs4_str) {
+            return id3_ucs4_utf8duplicate(ucs4_str);
+        }
+    }
+    return NULL;
+}
 
 void init_playback(playback_t *playback, const char *path) {
     ma_result result = 0;
@@ -40,6 +59,13 @@ void init_playback(playback_t *playback, const char *path) {
     }
 
     ma_sound_get_length_in_seconds(&playback->sound, &playback->length);
+    struct id3_file *file = id3_file_open(path, ID3_FILE_MODE_READONLY);
+    struct id3_tag *tag = id3_file_tag(file);
+
+    playback->artist = get_id3tag(tag, ID3_FRAME_ARTIST);
+    playback->title = get_id3tag(tag, ID3_FRAME_TITLE);
+
+    id3_file_close(file);
 }
 
 void render_progressbar(WINDOW *area, const playback_t *playback) {
@@ -56,6 +82,7 @@ void render_progressbar(WINDOW *area, const playback_t *playback) {
                                          (int)playback->progress % 60);
     int bar_fill = percentage * (w - 3 - meta_length);
 
+    if (playback->title && playback->artist) mvwprintw(area, 0, 1, "%s - %s", playback->title, playback->artist);
     mvwprintw(area, 1, 1, "%s", buffer);
     for (int i = 0; i < bar_fill; i++) {
         mvwprintw(area, 1, i+1+meta_length, "#");
@@ -104,19 +131,23 @@ int main(int argc, char *argv[]) {
                 break;
 
             case KEY_LEFT:
-                ma_sound_seek_to_second(&playback.sound, playback.progress - 1.0f);
+                if (playback.progress - 1.0f >= 0.0f)
+                    ma_sound_seek_to_second(&playback.sound, playback.progress - 1.0f);
                 break;
 
             case KEY_RIGHT:
-                ma_sound_seek_to_second(&playback.sound, playback.progress + 1.0f);
+                if (playback.progress + 1.0f <= playback.length)
+                    ma_sound_seek_to_second(&playback.sound, playback.progress + 1.0f);
                 break;
 
             case KEY_SLEFT:
-                ma_sound_seek_to_second(&playback.sound, playback.progress - 10.0f);
+                if (playback.progress - 10.0f >= 0.0f)
+                    ma_sound_seek_to_second(&playback.sound, playback.progress - 10.0f);
                 break;
 
             case KEY_SRIGHT:
-                ma_sound_seek_to_second(&playback.sound, playback.progress + 10.0f);
+                if (playback.progress + 10.0f <= playback.length)
+                    ma_sound_seek_to_second(&playback.sound, playback.progress + 10.0f);
                 break;
 
             case KEY_RESIZE:
@@ -136,6 +167,10 @@ int main(int argc, char *argv[]) {
 
     ma_sound_uninit(&playback.sound);
     ma_engine_uninit(&playback.engine);
+
+    if (playback.title) free(playback.title);
+    if (playback.artist) free(playback.artist);
+
     delwin(progressbar);
     endwin();
     return 0;
