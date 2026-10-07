@@ -1,8 +1,14 @@
 #include "song.h"
+#include "proc_title.h"
+
+#include <errno.h>
 #include <ncurses.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+
+#include <sys/prctl.h>
 
 #include <id3tag.h>
 
@@ -65,6 +71,8 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, handle_exit_signal);
     signal(SIGTERM, handle_exit_signal);
 
+    proctitle_init(argc, argv);
+
     initscr();
     keypad(stdscr, TRUE);
     noecho();
@@ -77,6 +85,16 @@ int main(int argc, char *argv[]) {
 
     WINDOW *progressbar = subwin(stdscr, 3, COLS, LINES-3, 0);
 
+    if (playback.song.title && playback.song.artist) {
+        size_t size = snprintf(NULL, 0, "cleo %s - %s", playback.song.artist, playback.song.title);
+        char *name = malloc(size+1);
+        if (!name) return -ENOMEM;
+        memset(name, 0, size+1);
+
+        sprintf(name, "cleo %s - %s", playback.song.artist, playback.song.title);
+        proctitle_set(name);
+    }
+
     int c = '\0';
     while (g_running && (c = getch()) != 'q') {
         song_update(&playback.song);
@@ -85,7 +103,7 @@ int main(int argc, char *argv[]) {
 
         wrefresh(stdscr);
         switch (c) {
-            case ' ':
+            case ' ': case 'p':
                 song_toggle(&playback.song);
                 break;
 

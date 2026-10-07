@@ -2,7 +2,8 @@ CFLAGS=-Wall -Wextra -std=c11 -pedantic -ggdb -Wno-char-subscripts -Wno-type-lim
 LDFLAGS=-flto -lcurses -lm -msse2 -mavx2 -ggdb -lid3tag
 
 OBJ=src/main.o\
-	src/song.o
+	src/song.o\
+	src/proc_title.o
 
 
 all: $(OBJ) | bin
